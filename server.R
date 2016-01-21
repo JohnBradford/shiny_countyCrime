@@ -12,21 +12,64 @@ library(Cairo)   # For nicer ggplot2 output when deployed on Linux
 # data(state.map)
 # data(county.map)
 cn <- read.csv("countyCrimeData.csv", na.strings=c("", "NA"), stringsAsFactors = F )
-# cn$showName <- FALSE
+cnState <- cn  %>% group_by(State) %>% 
+  summarise(n=n(), HS_grad=weighted.mean(HS_grad, pop2011, na.rm=T),
+            Unemployment=weighted.mean(Unemployment, pop2011, na.rm=T),
+            childPoverty=weighted.mean(childPoverty, pop2011, na.rm=T),
+            incomeInequalityRatio=weighted.mean(incomeInequalityRatio, pop2011, na.rm=T),
+            childSingleParent=weighted.mean(childSingleParent, pop2011, na.rm=T),
+            socialAssociation=weighted.mean(socialAssociation, pop2011, na.rm=T),
+            violentCrime=weighted.mean(violentCrime, pop2011, na.rm=T),
+            blackPrcnt_nonH=weighted.mean(blackPrcnt_nonH, pop2011, na.rm=T),
+            hispanicPrcnt=weighted.mean(hispanicPrcnt, pop2011, na.rm=T),
+            whitePrcnt_nonH=weighted.mean(whitePrcnt_nonH, pop2011, na.rm=T),
+            femalePrcnt=weighted.mean(femalePrcnt, pop2011, na.rm=T),
+            ruralPrcnt=weighted.mean(ruralPrcnt, pop2011, na.rm=T),
+            medianIncome=weighted.mean(medianIncome, pop2011, na.rm=T),
+            crimeHomicide=weighted.mean(crimeHomicide, pop2011, na.rm=T),
+            pop2011 = sum(pop2011, na.rm=T))
 
 shinyServer(function(input, output) {
 
+  
   ranges <- reactiveValues(x = NULL, y = NULL)
   
-  # For storing which rows have been excluded
+
 
 
   datasetInput <-  reactive({
+    
+    
+    if (input$unit == "County") {
+      cn <- cn
+    } else {
+      cn <- cnState
+    }
+    
+#     if (input$unit == "State") 
+#     {df <- df %>% 
+#       filter(STATE == input$st)
+#     }
+#     
     DV <- switch(input$dv, 
-                  "Homicides" = cn$crimeHomicide,
-                  "Violent Crime" = cn$violentCrime)
+                 "Homicides" = cn$crimeHomicide,
+                 "Violent Crime" = cn$violentCrime,
+                 "High School Graduation" = cn$HS_grad,
+                 "Unemployment" = cn$Unemployment, 
+                 "Child Poverty" = cn$childPoverty,
+                 "Income Inequality" = cn$incomeInequalityRatio, 
+                 "Median Income" = cn$medianIncome, 
+                 "Single Parent Households" = cn$childSingleParent, 
+                 "Social Associations" = cn$socialAssociation,
+                 "Black Pop." = cn$blackPrcnt_nonH, 
+                 "Hispanic Pop." = cn$hispanicPrcnt, 
+                 "White Pop." = cn$whitePrcnt_nonH, 
+                 "Female Pop." = cn$femalePrcnt, 
+                 "Rural Pop." = cn$ruralPrcnt)
     
     IV <- switch(input$iv,
+                 "Homicides" = cn$crimeHomicide,
+                 "Violent Crime" = cn$violentCrime,
             "High School Graduation" = cn$HS_grad,
             "Unemployment" = cn$Unemployment, 
             "Child Poverty" = cn$childPoverty,
@@ -46,20 +89,26 @@ shinyServer(function(input, output) {
            "Population" = cn$pop2011)
     
     POP <- cn$pop2011
-    
-    NAME <- cn$NAME
-    
     STATE <- cn$State
     
-    region <- cn$region
+    if(input$unit == "County") {
+      NAME <- cn$NAME
+      df <- cbind.data.frame(NAME, STATE, DV, IV, POP, SIZE, stringsAsFactors = F) %>% 
+        arrange(desc(SIZE))
+      if (input$st != "Show All") 
+      {df <- df %>% 
+        filter(STATE == input$st)
+      }} else {
+        NAME <- cn$State
+        df <- cbind.data.frame(STATE, DV, IV, POP, SIZE, stringsAsFactors = F) %>% 
+          arrange(desc(SIZE))
+        #input$st <- "Show All"
+        
+      }
+      
+      
+    #region <- cn$region
     
-    df <- cbind.data.frame(NAME, STATE, DV, IV, POP, SIZE, region, stringsAsFactors = F) %>% 
-   #df <- cbind.data.frame(DV, IV, SIZE, POP, NAME, STATE, stringsAsFactors = F) %>% 
-     arrange(desc(SIZE))
-   if (input$st != "Show All") 
-   {df <- df %>% 
-     filter(STATE == input$st)
-   }
    df
 
     })
@@ -80,8 +129,12 @@ shinyServer(function(input, output) {
     df <- datasetInput()
    # df <- arrange(datasetInput(), desc(SIZE))
     n <- input$nlabels
-    colorVar <- df$STATE
-    if (input$st != "Show All") {colorVar <- df$SIZE}
+   # if(input$unit=="County"){
+      colorVar <- df$STATE
+      if (input$st != "Show All" & input$unit == "County") {colorVar <- df$SIZE}
+      if (input$unit == "State"){colorVar <- df$STATE}
+    #}
+    #if(input$unit=="State"){colorVar <- df$STATE}
     
     
     
@@ -107,24 +160,27 @@ shinyServer(function(input, output) {
       thePlot <- thePlot +    
         geom_abline(intercept=Model$coefficients[1], 
                     slope= Model$coefficients[2], color="red") +
-        ggtitle(paste("Linear Regression of ", input$dv, " on ", input$iv, " for US Counties", 
-                      "\nWeighted by Population.  ", "R-squared: ", round(S$r.squared, 2), "  Coeff.:  ", 
+        ggtitle(paste("Linear Regression of ", input$dv, " on ", input$iv, " Weighted by Population.", "\nR-squared: ", round(S$r.squared, 2), "  Coeff.:  ", 
                       round(S$coefficients[2], 2), sep="")) 
       
       }
     
     plotOpts <- theme(axis.title.y = element_text(angle=90)) 
 
-    colorLegend <- if (input$st != "Show All") {scale_colour_continuous(guide = FALSE) }
-    else{scale_colour_discrete(guide = FALSE)}
+#     colorLegend <- if (input$st != "Show All") {scale_colour_continuous(guide = FALSE) }
+#     else{scale_colour_discrete(guide = FALSE)}
+    
+    gText <- if(input$unit == "County") {geom_text(data=topList, aes(x=IV, y=DV, label=NAME), size=4, vjust=1)}
+    else {geom_text(data=topList, aes(x=IV, y=DV, label=STATE), size=4, vjust=1)}
     
 
     thePlot  +
-    geom_text(data=topList, aes(x=IV, y=DV, label=NAME), size=4, vjust=1) +
+      gText +
       ylab(label=input$dv) + xlab(label=input$iv) + 
-      scale_size_continuous(guide = FALSE) +
-      scale_alpha_continuous(guide = FALSE) +
-      colorLegend +
+      guides(colour=FALSE, size=FALSE, alpha=FALSE) +
+      #scale_size_continuous(guide = FALSE) +
+      #scale_alpha_continuous(guide = FALSE) +
+      #colorLegend +
       plotOpts +
       theme_gdocs() +
       coord_cartesian(xlim = ranges$x, ylim = ranges$y)
@@ -166,8 +222,14 @@ shinyServer(function(input, output) {
   
   output$click_info <- renderPrint({
     df <- datasetInput()
-    df <- df[,1:5]
+    
+    if(input$unit == "County") {
+      df <- df[,1:5]
     names(df) <- c("County", "State", input$dv, input$iv, "Pop") # input$scale, input$scale )
+    } else {
+      df <- df[,1:4]
+      names(df) <- c("State", input$dv, input$iv, "Pop")
+    }
     #df <- df[,-6]
 #     new_df <- df
 #     new_df[,1] <- df$County
@@ -177,7 +239,7 @@ shinyServer(function(input, output) {
     varNames <- names(df)
     # Because it's a ggplot2, we don't need to supply xvar or yvar; if this
     # were a base graphics plot, we'd need those.
-    nearPoints(df=df, xvar=varNames[4], yvar=varNames[3], input$plot1_click, addDist = TRUE)
+    nearPoints(df=df, xvar=input$iv, yvar=input$dv, input$plot1_click, addDist = F)
   })
   
 #   output$hover_info <- renderPrint({
